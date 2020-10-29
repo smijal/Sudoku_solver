@@ -8,6 +8,8 @@ import math
 import tensorflow as tf
 import glob
 
+
+#Path
 current_directory = os.path.dirname(os.path.abspath(__file__))
 image_path = os.path.join(current_directory , 'sudoku.png')
 image = cv2.imread(image_path)
@@ -18,6 +20,11 @@ current_directory = os.path.dirname(os.path.abspath(__file__))
 final_directory = os.path.join(current_directory, r'extracted_cells')
 if not os.path.exists(final_directory):
     os.makedirs(final_directory)
+
+#Add neural network for digit recognition
+#Open extracted_cells folder, read image one by one -> recognize -> write to the matrix
+model_path = os.path.join(current_directory, 'saved_model/my_model12')
+new_model = tf.keras.models.load_model(model_path)
 
 #final matrix 
 sudoku_matrix = np.zeros((9,9), dtype='int')
@@ -86,6 +93,8 @@ cnts = sorted(cnts, key=cv2.contourArea, reverse=True)[:500]  #sort by intensity
 image_copy = image.copy() 
 _ = cv2.drawContours(image_copy, cnts, -1, (255,0,255), 2)
 plot_images(blur,image_copy, 'thresh', 'contours')
+cv2.waitKey(0)
+cv2.destroyAllWindows()
 
 
 cell = None
@@ -104,17 +113,17 @@ for c in cnts:
         cell = treshold(cell)
         indexes = [math.floor(x/w), math.floor(y/w)]
         if(indexes[0]>8 or indexes[1]>8):
-            print("Index greater than 8")
-            print("Width= " + str(w))
-            print("Height = " + str(h))
-            print("Ceil x/w = "+ str(math.floor(x/w)))
-            print("Ceil y/h = "+ str(math.floor(y/h)))
+            # print("Index greater than 8")
+            # print("Width= " + str(w))
+            # print("Height = " + str(h))
+            # print("Ceil x/w = "+ str(math.floor(x/w)))
+            # print("Ceil y/h = "+ str(math.floor(y/h)))
             plot_images(cell,cell,str(x)+" x " + str(y), str(indexes))
-        elif(check_bool[indexes[0]][indexes[1]]==1):
-            print("Already scanned")
+        # elif(check_bool[indexes[0]][indexes[1]]==1):
+        #     # print("Already scanned")
         else:
             check_bool[indexes[0]][indexes[1]] = 1
-            print("Index saved")
+            # print("Index saved")
             cell_name = os.path.join(final_directory, calculate_index(indexes) + ".jpg")
             cv2.imwrite(cell_name, cell)
         if(np.array_equal(mask,check_bool)):
@@ -133,10 +142,7 @@ for filename in files:
 cells = np.array(cells)
 cells.reshape(81,28,28)
 
-#Add neural network for digit recognition
-#Open extracted_cells folder, read image one by one -> recognize -> write to the matrix
-model_path = os.path.join(current_directory, 'saved_model/my_model12')
-new_model = tf.keras.models.load_model(model_path)
+
 #new_model.summary()
 predictions = new_model.predict(cells)
 i=0
@@ -158,11 +164,62 @@ for pred in predictions:
 
 print("Sudoku matrix: ")
 print(sudoku_matrix)
+empty_loc=[0,0]
 
-#TODO: Solve the sudoku_matrix
+def checkRow(sudoku_matrix, row_indx, num):
+    row = sudoku_matrix[row_indx,:]
+    if num in row:
+        return True
+    return False
+def checkColumn(sudoku_matrix, col_indx, num):
+    column = sudoku_matrix[:,col_indx]
+    if num in column:
+        return True
+    return False
+
+def checkBox(sudoku_matrix, row_indx, col_indx, num):
+    sr = row_indx//3*3
+    sc = col_indx//3*3
+    box = sudoku_matrix[sr:sr+3,sc:sc+3]
+    if num in box:
+        return True
+    return False
+
+def isSafe(sudoku_matrix,ri,ci,num):
+    return (not checkRow(sudoku_matrix,ri,num) and
+           not checkColumn(sudoku_matrix,ci,num) and
+           not checkBox(sudoku_matrix,ri,ci,num) )    
+
+def findEmpty(sudoku_matrix,empty_loc):
+    for i in range(9):
+        for j in range(9):
+            if(sudoku_matrix[i,j]==0):
+                empty_loc[0]=i
+                empty_loc[1]=j
+                return True
+    return False
+
+#solution with backtracking
+def solve(sudoku_matrix, empty_loc):
+    if(not findEmpty(sudoku_matrix,empty_loc)):
+        return True
+    else:
+        row=empty_loc[0]
+        column = empty_loc[1]
+    for num in range(1,10):
+        if(isSafe(sudoku_matrix,row,column,num)):
+            sudoku_matrix[row,column]=num
+            if(solve(sudoku_matrix,empty_loc)):
+                return True
+            sudoku_matrix[row,column]=0
+    return False
+
+solve(sudoku_matrix,empty_loc)
+print("Solved Matrix")
+print(sudoku_matrix)
+
 #TODO: Possibly write back to a new image or fill up in the same image
 
 
 
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+
