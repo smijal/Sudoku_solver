@@ -14,7 +14,11 @@ import glob
 current_directory = os.path.dirname(os.path.abspath(__file__))
 image_path = os.path.join(current_directory , 'sudoku.png')
 image = cv2.imread(image_path)
+im_copy = image
 print(image.shape)
+image = cv2.resize(image,(1200,1200))
+print(image.shape)
+cell_size = image.shape[0]//9
 
 #To create a new directory for saving the extracted cells from the sudoku table
 current_directory = os.path.dirname(os.path.abspath(__file__))
@@ -86,16 +90,13 @@ def cropND(image):
     return image
 
 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) #make it gray
-blur = cv2.GaussianBlur(gray, (3,3), 0) #blur to get rid of undesired pixels
-inverted = np.invert(blur) #invert to black background -> white number
-contours = cv2.Canny(blur, 20,200)  #contours
+inverted = np.invert(gray) #invert to black background -> white number
+contours = cv2.Canny(gray, 20,200)  #contours
 cnts, new = cv2.findContours(contours.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-cnts = sorted(cnts, key=cv2.contourArea, reverse=True)[:500]  #sort by intensity of contours
+cnts = sorted(cnts, key=cv2.contourArea, reverse=True)  #sort by intensity of contours
 image_copy = image.copy() 
 _ = cv2.drawContours(image_copy, cnts, -1, (255,0,255), 2)
-plot_images(blur,image_copy, 'thresh', 'contours')
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+
 
 
 cell = None
@@ -104,35 +105,36 @@ for c in cnts:
     edges_count = cv2.approxPolyDP(c, 0.02*perimeter, True)
     if(len(edges_count)==4):
         x,y,w,h = cv2.boundingRect(c)
-        cell = image[y:y+126, x:x+126]
-        cell=cropND(cell)
-        cell = Image.fromarray(np.uint8(cell))
-        resized = resize_tf(cell)
-        resized = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY) #make it gray
-        cell = np.invert(resized)
-        cell = blendFrame(cell)
-        cell = treshold(cell)
-        indexes = [math.floor(x/w), math.floor(y/w)]
-        if(indexes[0]>8 or indexes[1]>8):
-            # print("Index greater than 8")
-            # print("Width= " + str(w))
-            # print("Height = " + str(h))
-            # print("Ceil x/w = "+ str(math.floor(x/w)))
-            # print("Ceil y/h = "+ str(math.floor(y/h)))
-            plot_images(cell,cell,str(x)+" x " + str(y), str(indexes))
-        # elif(check_bool[indexes[0]][indexes[1]]==1):
-        #     # print("Already scanned")
+        if(w>180 or h>180 or h<100 or w<100):
+            print("Ignore")
+            
         else:
-            check_bool[indexes[0]][indexes[1]] = 1
-            # print("Index saved")
-            cell_name = os.path.join(final_directory, calculate_index(indexes) + ".jpg")
-            cv2.imwrite(cell_name, cell)
-        if(np.array_equal(mask,check_bool)):
-            print("All cells scanned")
-            break
+            cell = image[y:y+h, x:x+w]
+            cell=cropND(cell)
+            cell = Image.fromarray(np.uint8(cell))
+            resized = resize_tf(cell)
+            resized = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY) #make it gray
+            cell = np.invert(resized)
+            cell = blendFrame(cell)
+            cell = treshold(cell)
+            indexes = [math.floor(x/w), math.floor(y/h)]
+            if(indexes[0]>8):
+                indexes[0]=8
+            if(indexes[1]>8):
+                indexes[i]=8
+            else:
+                check_bool[indexes[0]][indexes[1]] = 1
+                cell_name = os.path.join(final_directory, calculate_index(indexes) + ".jpg")
+                cv2.imwrite(cell_name, cell)
+            if(np.array_equal(mask,check_bool)):
+                print("All cells scanned")
+                break
 print("Checksum")
 print(check_bool)
 
+if(not np.array_equal(mask,check_bool)):
+    print("Failed to scan all the cells in the grid")
+    exit()
 cells = []
 files = glob.glob(os.path.join(final_directory,"*.jpg"))
 files.sort()
@@ -148,23 +150,16 @@ cells.reshape(81,28,28)
 predictions = new_model.predict(cells)
 i=0
 for pred in predictions:
-    #print("c=" + str(i))
-    #print(pred)
     perc = max(pred)
     if(perc*100>95):
         value = np.where(pred==perc)
         sudoku_matrix[int(i/9),i%9]=value[0]
-        #print(value)
-        #print(perc*100)
-        # plt.imshow(cells[i])
-        # plt.show()
-    #else:
-        #print("Confidence under 90%")
-
     i+=1
 
 print("Sudoku matrix: ")
 print(sudoku_matrix)
+to_fill = (sudoku_matrix==0)*1
+
 empty_loc=[0,0]
 
 def checkRow(sudoku_matrix, row_indx, num):
@@ -215,12 +210,38 @@ def solve(sudoku_matrix, empty_loc):
             sudoku_matrix[row,column]=0
     return False
 
-solve(sudoku_matrix,empty_loc)
+check_sol = solve(sudoku_matrix,empty_loc)
+if(not check_sol):
+    print("No solution found")
+    exit()
 print("Solved Matrix")
 print(sudoku_matrix)
 
-#TODO: Possibly write back to a new image or fill up in the same image
+dig_directory = os.path.join(current_directory, r'digits')
+files = glob.glob(os.path.join(dig_directory,"*.jpg"))
+files.sort()
+print(files)
 
+def findDigit(files, digit):
+    for filename in files:
+        l = len(filename)
+        name=filename[l-6:]
+        if(name == "d"+str(digit) + ".JPG"):
+            d=cv2.imread(filename)
+            d=cv2.resize(d,(100,100))
+            # cv2.imshow("d",d)
+            return d
 
+def writeSolution(sudoku_matrix, to_fill, image_copy):
+    for i in range(9):
+        for j in range(9):
+            if(to_fill[i,j]==1):
+                d=findDigit(files,sudoku_matrix[i,j])
+                image_copy[i*130+30:i*130+30+100, j*130+30:j*130+100+30,:]  = d
 
+writeSolution(sudoku_matrix,to_fill,im_copy)
+plot_images(image,im_copy,'original','solution')
+
+cv2.waitKey(0)
+cv2.destroyAllWindows()
 
