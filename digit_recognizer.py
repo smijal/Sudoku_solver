@@ -5,7 +5,7 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.preprocessing import image
 
 current_directory = os.path.dirname(os.path.abspath(__file__))
-final_directory = os.path.join(current_directory, 'saved_model/my_model12') #model 11 is not bad model 12 beast
+final_directory = os.path.join(current_directory, 'saved_model/my_model12') #model 11 is not a bad model 12 works better
 train = ImageDataGenerator(rescale=1/255)
 validation = ImageDataGenerator(rescale=1/255)
 
